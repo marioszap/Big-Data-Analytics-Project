@@ -1,154 +1,351 @@
-
-import pandas as pd
+import re
 import json
-import math
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
 from difflib import get_close_matches
 
-path_to_beacons_dataset : str = '../data/beacons_dataset.csv'
-path_to_clinical_dataset : str = '../data/clinical_dataset.csv'
+
+# ======================================================
+# Paths 
+# ======================================================
+
+BASE_DIR = Path(__file__).resolve().parent.parent   # project-root/
+DATA_DIR = BASE_DIR / "data"
+OUT_DIR = DATA_DIR / "outputs"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-
-def remove_errors(df: pd.DataFrame) -> None:
-    df.replace(to_replace = [999, r'^(?i)test.*'], value = math.nan, regex=True, inplace=True)
-
-
-#clinical
-def nominal_to_numerical(df: pd.DataFrame) -> None:
-    nominal_to_numerical_dict : dict = {}
-    for column in df.columns:
-        if isinstance(df[column][0], str):
-            nominal_to_numerical_dict[column] = {}
-            possible_values : list = df[column].unique()
-            for i in range(len(possible_values)):
-                if not pd.isna(possible_values[i]):
-                    nominal_to_numerical_dict[column][possible_values[i]] = i
-            df[column] = df[column].map(nominal_to_numerical_dict[column])
-
-    with open('../data/map_nominals_to_numerical.json', 'w') as output:
-        json.dump(nominal_to_numerical_dict, output, indent=4)
-
-#clinical
-def num_NaN_rows_by_column(df) -> None:
-    NaN_rows_by_col_dict = {}
-    for column in df.columns:
-        NaN_rows_by_col_dict[column] = len(df.loc[pd.isna(df[column])])
-        with open('../data/num_NaN_rows_by_column.json', 'w') as output:
-            json.dump(NaN_rows_by_col_dict, output, indent=4)
+def save_json(obj: dict, path: str | Path) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=4, ensure_ascii=False)
 
 
-def replace_with_most_similar(value, choices) -> str:
-    if isinstance(value, str):
-        match = get_close_matches(value, choices, n=1, cutoff=0.65)
-        if match:
-            return match[0]
-    return value
+# ======================================================
+# Clinical preprocessing -->  PART A1
+# ======================================================
 
-def replace_with_most_similar_dict(value, choices:dict) -> str:
-    if isinstance(value, str):
-        match = get_close_matches(value, choices.keys(), n=1, cutoff=0.7)
-        if match:
-            return choices[match[0]]
-    return value
+def remove_errors(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Replace erroneous values with NaN:
+    - numeric sentinel 999
+    - strings starting with 'test' (case-insensitive)
+    """
+    out = df.copy()
 
-def replace_if_contains(text, mapping) -> str:
-    if isinstance(text, str):
-        for key, value in mapping.items():
-            if key in text: 
-                return value
-    return text
+    out.replace(999, np.nan, inplace=True)
 
-#beacons
-def fix_room_names(df) -> None:
-    rooms_reference = ['bathroom', 'laundryroom', 'livingroom', 'kitchen', 'bedroom', 'office']
+    obj_cols = out.select_dtypes(include="object").columns
+    if len(obj_cols) > 0:
+        out[obj_cols] = out[obj_cols].replace(
+            to_replace=re.compile(r"^\s*test.*", flags=re.IGNORECASE),
+            value=np.nan
+        )
 
-    keywords_dict = {
-        'bath': 'bathroom',
-        'laundry': 'laundryroom',
-        'tv': 'livingroom',
-        'sit': 'livingroom',
-        'seat': 'livingroom',
-        'dinner': 'kitchen',
-        'diner': 'kitchen',
-        'desk': 'office',
-        'work': 'office',
-        'hall': 'hall',
-        'out': 'garden',
-        'entr': 'entrance',
-        'bed': 'bedroom'
+    return out
+
+
+def nominal_to_numerical(
+    df: pd.DataFrame,
+    exclude_cols: Optional[List[str]] = None,
+    mapping_out: Optional[str | Path] = None
+) -> Tuple[pd.DataFrame, Dict[str, Dict[str, int]]]:
+    """
+    Convert nominal (object) columns to numeric codes.
+    Stable mapping using sorted unique values.
+    """
+    exclude_cols = exclude_cols or []
+    out = df.copy()
+    mapping: Dict[str, Dict[str, int]] = {}
+
+    obj_cols = [c for c in out.columns if out[c].dtype == "object" and c not in exclude_cols]
+
+    for col in obj_cols:
+        uniques = sorted(out[col].dropna().astype(str).unique())
+        col_map = {v: i for i, v in enumerate(uniques)}
+        mapping[col] = col_map
+
+        out[col] = out[col].astype(str).where(out[col].notna(), np.nan)
+        out[col] = out[col].map(col_map)
+
+    if mapping_out:
+        save_json(mapping, mapping_out)
+
+    return out, mapping
+
+
+def count_nan_per_column(df: pd.DataFrame, out_path: Optional[str | Path] = None) -> Dict[str, int]:
+    counts = df.isna().sum().to_dict()
+    if out_path:
+        save_json(counts, out_path)
+    return counts
+
+
+# ======================================================
+# Missing values handling
+# ======================================================
+
+def drop_high_missing_columns(
+    df: pd.DataFrame,
+    threshold: float = 0.4,
+    exclude_cols: Optional[List[str]] = None
+) -> pd.DataFrame:
+    """
+    Drop columns with missing ratio > threshold.
+    Example: threshold=0.4 => drop columns with >40% missing.
+    """
+    exclude_cols = set(exclude_cols or [])
+    out = df.copy()
+
+    miss_ratio = out.isna().mean()
+    to_drop = [c for c, r in miss_ratio.items() if (r > threshold and c not in exclude_cols)]
+
+    return out.drop(columns=to_drop)
+
+
+def drop_rows_with_missing(df: pd.DataFrame, required_cols: List[str]) -> pd.DataFrame:
+    """Drop rows with missing values in required columns (e.g., target)."""
+    return df.dropna(subset=required_cols).copy()
+
+
+def impute_missing_values(
+    df: pd.DataFrame,
+    strategy_num: str = "median",
+    strategy_cat: str = "mode",
+    exclude_cols: Optional[List[str]] = None
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """
+    Impute missing values:
+      - numeric: median (default) or mean
+      - categorical/object: mode (most frequent)
+    Returns (imputed_df, numeric_imputation_report)
+    """
+    exclude_cols = set(exclude_cols or [])
+    out = df.copy()
+    report: Dict[str, float] = {}
+
+    # numeric columns
+    num_cols = [c for c in out.columns if pd.api.types.is_numeric_dtype(out[c]) and c not in exclude_cols]
+    for c in num_cols:
+        if out[c].isna().any():
+            if strategy_num == "mean":
+                fill_val = float(out[c].mean())
+            else:
+                fill_val = float(out[c].median())
+            out[c] = out[c].fillna(fill_val)
+            report[c] = fill_val
+
+    # categorical/object columns
+    cat_cols = [c for c in out.columns if out[c].dtype == "object" and c not in exclude_cols]
+    for c in cat_cols:
+        if out[c].isna().any():
+            if strategy_cat == "mode":
+                modes = out[c].mode(dropna=True)
+                fill_val = modes.iloc[0] if len(modes) > 0 else "UNKNOWN"
+            else:
+                fill_val = "UNKNOWN"
+            out[c] = out[c].fillna(fill_val)
+
+    return out, report
+
+
+# ======================================================
+# Beacons preprocessing --> PART B1
+# ======================================================
+
+def normalize_room_text(s: pd.Series) -> pd.Series:
+    s = s.astype(str).str.lower().str.strip()
+    s = s.str.replace(r"[^a-z]+", "", regex=True)
+    return s.replace("", np.nan)
+
+
+def fix_room_names(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+
+    reference_rooms = ["bathroom", "laundryroom", "livingroom", "kitchen", "bedroom", "office"]
+
+    keyword_map = {
+        "bath": "bathroom",
+        "laundry": "laundryroom",
+        "sit": "livingroom",
+        "tv": "livingroom",
+        "living": "livingroom",
+        "diner": "kitchen",
+        "kitch": "kitchen",
+        "desk": "office",
+        "work": "office",
+        "bed": "bedroom",
     }
-    
-    df['room'] = df['room'].str.lower()
-    df['room'] = df['room'].str.replace(r'[^a-z]+', '', regex=True)
-    df['room'] = df['room'].apply(lambda x: replace_with_most_similar(x, rooms_reference))
-    df['room'] = df['room'].apply(lambda x: replace_with_most_similar_dict(x, keywords_dict))
-    df['room'] = df['room'].apply(lambda x: replace_if_contains(x, keywords_dict))
+
+    out["room"] = normalize_room_text(out["room"])
+
+    for key, val in keyword_map.items():
+        mask = out["room"].notna() & out["room"].str.contains(key, regex=False)
+        out.loc[mask, "room"] = val
+
+    def fuzzy(x):
+        if pd.isna(x) or x in reference_rooms:
+            return x
+        match = get_close_matches(x, reference_rooms, n=1, cutoff=0.65)
+        return match[0] if match else x
+
+    out["room"] = out["room"].apply(fuzzy)
+    return out
 
 
-    print(df['room'].unique())
-    print(len(df['room'].unique()))
+def remove_erroneous_users(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    s = out["part_id"].astype(str).str.strip()
+    mask = s.str.fullmatch(r"\d{4}")
+    out = out[mask].copy()
+    out["part_id"] = out["part_id"].astype(str)
+    return out
 
 
-def remove_erronous_users(df) -> pd.DataFrame:
-    mask = df['part_id'].astype(str).str.len() == 4
-    df = df[mask] #Remove non 4-digit values 
-    return df[df['part_id'].apply(lambda x: x.isnumeric())].copy()
+def build_timestamp(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    date = out["ts_date"].astype(str).str.zfill(8)
+    time = out["ts_time"].astype(str).str.strip()
+    out["timestamp"] = pd.to_datetime(
+        date + " " + time,
+        format="%Y%m%d %H:%M:%S",
+        errors="coerce"
+    )
+    return out
 
 
-def get_percent_of_time_per_room(df) -> pd.DataFrame:
+def get_percent_of_time_per_room(
+    df: pd.DataFrame,
+    keep_rooms: Optional[List[str]] = None,
+    daily: bool = False
+) -> pd.DataFrame:
+    """
+    If daily=False -> returns 1 row per user (weighted across days).
+    If daily=True  -> returns 1 row per (user, day).
+    """
+    keep_rooms = keep_rooms or ["kitchen", "bedroom", "bathroom", "livingroom"]
 
-    #df = df.loc[(df['part_id'] == '3089') & (df['ts_date'] == 20170915)] #DELETE THIS
-    keep_cols = ['kitchen', 'bedroom', 'bathroom', 'livingroom']
+    out = build_timestamp(df)
+    out = out.dropna(subset=["timestamp", "room", "part_id", "ts_date"]).copy()
+    out["ts_date"] = out["ts_date"].astype(int)
 
-    percent_of_time_per_room_df = pd.DataFrame()
-    unique_ids : list = df['part_id'].unique()
-    for user_id in unique_ids:
-        user_df = df.loc[df['part_id'] == user_id]
-        unique_days : list = user_df['ts_date'].unique()
-        for day in unique_days:
-            user_in_day_df = user_df.loc[user_df['ts_date'] == day].copy()
-            user_in_day_df['ts_time_delta'] = pd.to_timedelta(user_in_day_df['ts_time'])
-            user_in_day_df['time_diff'] = (user_in_day_df['ts_time_delta'].shift(-1) - user_in_day_df['ts_time_delta']).dt.total_seconds()
+    out.sort_values(["part_id", "ts_date", "timestamp"], inplace=True)
 
-            total_time_diff = (user_in_day_df['ts_time_delta'].iloc[-1] - user_in_day_df['ts_time_delta'].iloc[0]).total_seconds()
-            user_in_day_df = user_in_day_df.drop('ts_time_delta', axis=1)
-            user_in_day_df = user_in_day_df[:-1]
-            user_in_day_df = user_in_day_df.groupby(['room'])['time_diff'].sum().reset_index()
-            user_in_day_df['time_diff'] = (user_in_day_df['time_diff'] / total_time_diff) * 100
-            pivoted_df = user_in_day_df.pivot_table(values='time_diff', columns='room', aggfunc='sum').reset_index(drop=True)
+    out["next_ts"] = out.groupby(["part_id", "ts_date"])["timestamp"].shift(-1)
+    out["duration_s"] = (out["next_ts"] - out["timestamp"]).dt.total_seconds()
 
-            pivoted_df = pivoted_df[[c for c in pivoted_df.columns if c in keep_cols]]
+    out = out.dropna(subset=["duration_s"]).copy()
+    out = out[out["duration_s"] > 0].copy()
 
-            pivoted_df.insert(0, 'part_id', user_id)
-            pivoted_df.insert(1, 'date', day)
-            percent_of_time_per_room_df = pd.concat([percent_of_time_per_room_df, pivoted_df], ignore_index=True)
-    #print(percent_of_time_per_room_df)
-    return percent_of_time_per_room_df.fillna(0).copy()
-    # with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-    #     print(percent_of_time_per_room_df)
+    grouped = (
+        out.groupby(["part_id", "ts_date", "room"], as_index=False)["duration_s"]
+        .sum()
+    )
 
-#df = pd.read_csv(path_to_clinical_dataset, sep=';')
+    totals = (
+        grouped.groupby(["part_id", "ts_date"], as_index=False)["duration_s"]
+        .sum()
+        .rename(columns={"duration_s": "total_s"})
+    )
+
+    merged = grouped.merge(totals, on=["part_id", "ts_date"], how="left")
+    merged["pct"] = (merged["duration_s"] / merged["total_s"]) * 100.0
+
+    pivot_daily = merged.pivot_table(
+        index=["part_id", "ts_date"],
+        columns="room",
+        values="pct",
+        fill_value=0.0,
+        aggfunc="sum"
+    ).reset_index()
+
+    for r in keep_rooms:
+        if r not in pivot_daily.columns:
+            pivot_daily[r] = 0.0
+
+    pivot_daily = pivot_daily[["part_id", "ts_date"] + keep_rooms].copy()
+
+    if daily:
+        return pivot_daily.rename(columns={"ts_date": "date"})
+
+    # Weighted aggregation across days per user (weights = total time per day)
+    total_daily = totals.rename(columns={"ts_date": "date"}).copy()
+    pivot_daily = pivot_daily.rename(columns={"ts_date": "date"}).merge(total_daily, on=["part_id", "date"], how="left")
+
+    def weighted_avg(group: pd.DataFrame) -> pd.Series:
+        w = group["total_s"].to_numpy()
+        wsum = w.sum()
+        if wsum <= 0:
+            return pd.Series({r: 0.0 for r in keep_rooms})
+        return pd.Series({r: np.average(group[r].to_numpy(), weights=w) for r in keep_rooms})
+
+    per_user = pivot_daily.groupby("part_id").apply(weighted_avg).reset_index()
+    return per_user
 
 
-# print(df['gait_speed_slower'].loc[df['part_id'] == 3078]) #Has a Test not adequate
-# print(df['balance_single'].loc[df['part_id'] == 1008]) #Has a test non realizable
+# ======================================================
+# Main pipeline
+# ======================================================
 
-# remove_errors(df)
-# print(df['gait_speed_slower'].loc[df['part_id'] == 3078])
-# print(df['balance_single'].loc[df['part_id'] == 1008])
+if __name__ == "__main__":
 
-# nominal_to_numerical(df)
-# print(df['gait_speed_slower'].loc[df['part_id'] == 3078])
-# print(df['balance_single'].loc[df['part_id'] == 1008])
+    clinical_path = DATA_DIR / "clinical_dataset.csv"
+    beacons_path = DATA_DIR / "beacons_dataset.csv"
 
-df = pd.read_csv(path_to_beacons_dataset, sep=';')
-print(df[:20])
-fix_room_names(df)
-#3089  20180214
-#df = df.loc[(df['part_id'] == '3089') & (df['ts_date'] == 20180214)] #DELETE THIS
-#print(df)
+    clinical = pd.read_csv(clinical_path, sep=";")
+    beacons = pd.read_csv(beacons_path, sep=";")
 
-df = remove_erronous_users(df)
-df = get_percent_of_time_per_room(df)
-with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-    print(df[:20])
+    # ----------------------------
+    # Clinical (Part A1)
+    # ----------------------------
+    clinical_clean = remove_errors(clinical)
+
+    # Drop columns with too many missing
+    clinical_clean = drop_high_missing_columns(
+        clinical_clean,
+        threshold=0.4,
+        exclude_cols=["part_id", "fried"]
+    )
+
+    # Drop rows missing the target (needed for classification)
+    clinical_clean = drop_rows_with_missing(clinical_clean, required_cols=["fried"])
+
+    # Impute remaining missing values
+    clinical_imputed, impute_report = impute_missing_values(
+        clinical_clean,
+        strategy_num="median",
+        strategy_cat="mode",
+        exclude_cols=["part_id"]
+    )
+    save_json(impute_report, OUT_DIR / "imputation_report.json")
+
+    # Convert nominal -> numeric (after imputation)
+    clinical_numeric, mapping = nominal_to_numerical(
+        clinical_imputed,
+        exclude_cols=["part_id"],
+        mapping_out=OUT_DIR / "nominal_to_numeric_map.json"
+    )
+
+    save_json(count_nan_per_column(clinical_numeric), OUT_DIR / "num_nan_by_column_after_impute.json")
+    clinical_numeric.to_csv(OUT_DIR / "clinical_clean.csv", sep=";", index=False)
+
+    # ----------------------------
+    # Beacons (Part B1)
+    # ----------------------------
+    beacons_clean = fix_room_names(beacons)
+    beacons_clean = remove_erroneous_users(beacons_clean)
+
+    beacons_features = get_percent_of_time_per_room(
+        beacons_clean,
+        keep_rooms=["kitchen", "bedroom", "bathroom", "livingroom"],
+        daily=False   # 1 row per user
+    )
+
+    beacons_features.to_csv(OUT_DIR / "beacons_features.csv", sep=";", index=False)
+
+    print("✅ Preprocessing completed successfully.")
+    print(f"Saved: {OUT_DIR / 'clinical_clean.csv'}")
+    print(f"Saved: {OUT_DIR / 'beacons_features.csv'}")
