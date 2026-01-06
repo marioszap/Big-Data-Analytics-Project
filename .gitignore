@@ -3,3 +3,4 @@ data/
 .vscode
 *.pdf
 *.txt
+src/__pycache__
