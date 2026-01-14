@@ -16,9 +16,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 
 
-# -----------------------------
+
 # Paths
-# -----------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 OUT_DIR = DATA_DIR / "outputs"
@@ -35,7 +34,7 @@ def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
     num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = [c for c in X.columns if c not in num_cols]
 
-    # bool -> int for safety
+    # bool -> int
     for c in X.select_dtypes(include="bool").columns:
         X[c] = X[c].astype(int)
 
@@ -87,9 +86,7 @@ def run_classification() -> None:
 
     preprocessor = build_preprocessor(X_train.copy())
 
-    # -----------------------------
     # Models + grids
-    # -----------------------------
     models = {
         "logreg": (
             LogisticRegression(max_iter=4000, class_weight="balanced"),

@@ -1,5 +1,3 @@
-# src/clustering_merged_kmeans_agnes_gmm.py
-# ======================================================
 # MERGED DATASET ONLY
 # Outputs (like your screenshots):
 # - Best KMeans run across PCA choices (best k, silhouette)
@@ -36,9 +34,7 @@ from sklearn.mixture import GaussianMixture
 from sklearn.metrics import silhouette_score
 
 
-# -----------------------------
 # Paths
-# -----------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 OUT_DIR = DATA_DIR / "outputs"
@@ -51,9 +47,7 @@ def save_json(obj: dict, path: Path) -> None:
         json.dump(obj, f, indent=4, ensure_ascii=False)
 
 
-# -----------------------------
 # Merge
-# -----------------------------
 def merge_datasets() -> pd.DataFrame:
     beacons_path = OUT_DIR / "beacons_features.csv"
     clinical_path = OUT_DIR / "clinical_clean.csv"
@@ -74,9 +68,7 @@ def merge_datasets() -> pd.DataFrame:
     return merged
 
 
-# -----------------------------
 # Preprocessor
-# -----------------------------
 def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
     num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
     cat_cols = [c for c in X.columns if c not in num_cols]
@@ -128,9 +120,7 @@ def make_X_merged_only(merged: pd.DataFrame) -> Tuple[pd.DataFrame, List[str], L
     return X, X.columns.tolist(), drop_cols
 
 
-# -----------------------------
 # Grid search (best per method)
-# -----------------------------
 def evaluate_grid_kmeans_agnes_gmm(
     X_dense: np.ndarray,
     pca_list: List[Optional[int]],
@@ -232,9 +222,8 @@ def save_cluster_and_fried_tables(
         perc.to_csv(OUT_DIR / fried_percent_csv_name, sep=";")
 
 
-# -----------------------------
+
 # Main
-# -----------------------------
 def main() -> None:
     merged = merge_datasets()
     print(f"✅ Merge done: rows={len(merged)} users={merged['part_id'].nunique()}")
@@ -245,7 +234,7 @@ def main() -> None:
     X_trans = prep.fit_transform(X_df)
     X_dense = X_trans.toarray() if hasattr(X_trans, "toarray") else X_trans
 
-    # Grid (similar style to your older results)
+    # Grid 
     pca_list = [None, 2, 5, 10, 20]
     k_list = [2, 3, 4, 5, 6]
 
@@ -296,7 +285,7 @@ def main() -> None:
     }
     save_json(report, OUT_DIR / "clustering_report_merged_kmeans_agnes_gmm.json")
 
-    # Print like your screenshots
+    # Print
     pretty_print_best(best_kmeans, "KMeans (best across grid)")
     pretty_print_best(best_agnes, "AGNES / Agglomerative Ward (best across grid)")
     pretty_print_best(best_gmm, "GMM (best across grid)")

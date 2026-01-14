@@ -10,9 +10,7 @@ import pandas as pd
 from difflib import get_close_matches
 
 
-# ======================================================
 # Paths
-# ======================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 OUT_DIR = DATA_DIR / "outputs"
@@ -25,9 +23,7 @@ def save_json(obj: dict, path: str | Path) -> None:
         json.dump(obj, f, indent=4, ensure_ascii=False)
 
 
-# ======================================================
-# Clinical cleaning (NO encoding / NO imputation here)
-# ======================================================
+# Clinical cleaning 
 def remove_errors(df: pd.DataFrame) -> pd.DataFrame:
     """
     Replace erroneous values with NaN:
@@ -72,9 +68,7 @@ def drop_rows_with_missing(df: pd.DataFrame, required_cols: List[str]) -> pd.Dat
     return df.dropna(subset=required_cols).copy()
 
 
-# ======================================================
 # Beacons preprocessing + features
-# ======================================================
 def normalize_room_text(s: pd.Series) -> pd.Series:
     s = s.astype(str).str.lower().str.strip()
     s = s.str.replace(r"[^a-z]+", "", regex=True)
