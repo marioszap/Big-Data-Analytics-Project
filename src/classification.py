@@ -16,7 +16,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 
 
-
 # Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -31,12 +30,13 @@ def save_json(obj: dict, path: Path) -> None:
 
 
 def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
-    num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = [c for c in X.columns if c not in num_cols]
-
-    # bool -> int
+    # Ensure bool handled (SimpleImputer doesn't accept bool)
+    X = X.copy()
     for c in X.select_dtypes(include="bool").columns:
         X[c] = X[c].astype(int)
+
+    num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = [c for c in X.columns if c not in num_cols]
 
     numeric_pipe = Pipeline(steps=[
         ("imputer", SimpleImputer(strategy="median")),
@@ -79,14 +79,14 @@ def run_classification() -> None:
     X = df.drop(columns=drop_cols).copy()
     y = df[target_col].copy()
 
+    # Quick sanity check (useful for report)
+    class_counts = y.value_counts(dropna=False).to_dict()
+
     # Train/test split (final evaluation) + CV on train only
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    preprocessor = build_preprocessor(X_train.copy())
-
-    # Models + grids
     models = {
         "logreg": (
             LogisticRegression(max_iter=4000, class_weight="balanced"),
@@ -94,7 +94,7 @@ def run_classification() -> None:
                 "model__C": [0.1, 1.0, 10.0],
                 "model__penalty": ["l2"],
                 "model__solver": ["lbfgs"],
-            }
+            },
         ),
         "rf": (
             RandomForestClassifier(random_state=42, class_weight="balanced"),
@@ -103,14 +103,16 @@ def run_classification() -> None:
                 "model__max_depth": [None, 5, 10],
                 "model__min_samples_leaf": [1, 2, 4],
                 "model__max_features": ["sqrt", "log2"],
-            }
-        )
+            },
+        ),
     }
 
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    results = {}
+    results = {"class_distribution": class_counts}
 
     for name, (estimator, grid) in models.items():
+        preprocessor = build_preprocessor(X_train)
+
         pipe = Pipeline(steps=[
             ("prep", preprocessor),
             ("model", estimator),
@@ -122,8 +124,9 @@ def run_classification() -> None:
             scoring="f1_macro",
             cv=cv,
             n_jobs=-1,
-            refit=True
+            refit=True,
         )
+
         gs.fit(X_train, y_train)
 
         best_model = gs.best_estimator_
