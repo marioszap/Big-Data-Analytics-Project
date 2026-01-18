@@ -214,7 +214,7 @@ def run_part_b1() -> None:
     out_path = OUT_DIR / "beacons_features.csv"
     features.to_csv(out_path, sep=";", index=False)
 
-    print("✅ Part B1 (Beacons preprocessing) completed.")
+    print("Part B1 (Beacons preprocessing) completed.")
     print(f"Saved: {out_path}")
 
 
