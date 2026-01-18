@@ -86,7 +86,7 @@ def run_preprocessing_part_a() -> None:
     miss_report.to_csv(OUT_DIR / "clinical_missing_ratio_report.csv", index=False)
     clinical_clean.to_csv(OUT_DIR / "clinical_clean.csv", sep=";", index=False)
 
-    print("✅ Part A preprocessing completed.")
+    print("Part A preprocessing completed.")
     print(f"Saved: {OUT_DIR / 'clinical_clean.csv'}")
     print(f"Saved: {OUT_DIR / 'clinical_missing_ratio_report.csv'}")
 
