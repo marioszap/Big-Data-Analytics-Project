@@ -206,7 +206,7 @@ def save_cluster_and_fried_tables(
 
 def main() -> None:
     merged = merge_datasets()
-    print(f"✅ Merge done: rows={len(merged)} users={merged['part_id'].nunique()}")
+    print(f"Merge done: rows={len(merged)} users={merged['part_id'].nunique()}")
 
     X_df, used_cols, dropped_cols = make_X_merged_only(merged)
 
