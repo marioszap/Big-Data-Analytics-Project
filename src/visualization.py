@@ -161,7 +161,7 @@ def plot_pca_scatter_panels(data: Dict[str, pd.DataFrame]) -> None:
     out_path = FIG_DIR / "pca_scatter_clusters.png"
     plt.savefig(out_path, dpi=220, facecolor="white")
     plt.close(fig)
-    print(f"✅ Saved: {out_path}")
+    print(f"Saved: {out_path}")
 
 
 def _colored_boxplot(ax: plt.Axes, groups: List[np.ndarray], labels: List[str], colors: List) -> None:
@@ -224,7 +224,7 @@ def plot_age_boxplots_panels(data: Dict[str, pd.DataFrame]) -> None:
     out_path = FIG_DIR / "age_boxplots_by_cluster.png"
     plt.savefig(out_path, dpi=220, facecolor="white")
     plt.close(fig)
-    print(f"✅ Saved: {out_path}")
+    print(f"Saved: {out_path}")
 
 
 def _fried_to_text(series: pd.Series) -> pd.Series:
@@ -333,7 +333,7 @@ def plot_fried_pies_combined(data: Dict[str, pd.DataFrame]) -> None:
     out_path = FIG_DIR / "fried_pies_combined.png"
     plt.savefig(out_path, dpi=220, facecolor="white")
     plt.close(fig)
-    print(f"✅ Saved: {out_path}")
+    print(f"Saved: {out_path}")
 
 
 # Main
@@ -347,7 +347,7 @@ def main() -> None:
 
     plot_fried_pies_combined(data)
 
-    print("✅ Visualization completed. Check:", FIG_DIR)
+    print("Visualization completed. Check:", FIG_DIR)
 
 
 if __name__ == "__main__":
