@@ -266,9 +266,9 @@ def main() -> None:
     pretty_print_best(best_agnes, "AGNES / Agglomerative Ward (best across grid)")
     pretty_print_best(best_gmm, "GMM (best across grid)")
 
-    print(f"✅ Saved grid runs CSV: {runs_path}")
-    print("✅ Saved best clustered datasets + fried-percent tables in outputs/")
-    print(f"✅ Saved report: {OUT_DIR / 'clustering_report_merged_kmeans_agnes_gmm.json'}")
+    print(f"Saved grid runs CSV: {runs_path}")
+    print("Saved best clustered datasets + fried-percent tables in outputs/")
+    print(f"Saved report: {OUT_DIR / 'clustering_report_merged_kmeans_agnes_gmm.json'}")
 
 
 if __name__ == "__main__":
