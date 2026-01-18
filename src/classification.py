@@ -153,7 +153,7 @@ def run_classification() -> None:
         }
 
     save_json(results, OUT_DIR / "classification_results.json")
-    print(f"\n✅ Saved: {OUT_DIR / 'classification_results.json'}")
+    print(f"\nSaved: {OUT_DIR / 'classification_results.json'}")
 
 
 if __name__ == "__main__":
